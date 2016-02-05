@@ -204,13 +204,22 @@ namespace YAMS.Web
                 strTemplate = WebTemplate.ReplaceTags(strTemplate, dicTags);
 
                 //And send to the browser
-                context.Response.ReasonPhrase = "Completed - YAMS";
-                byte[] buffer = Encoding.UTF8.GetBytes(strTemplate);
-                context.Response.Body.Write(buffer, 0, buffer.Length);
-                return ModuleResult.Continue;
+                return writeContent(context, "Completed - YAMS", "text/html", strTemplate);
             }
 
         }
 
+        public ModuleResult writeContent(IHttpContext context, String reason, String type, String data)
+        {
+            context.Response.ReasonPhrase = reason;
+            byte[] buffer = Encoding.UTF8.GetBytes(data);
+            context.Response.ContentType = type;
+            context.Response.StatusCode = 200;
+            MemoryStream stream = new MemoryStream();
+            stream.Write(buffer, 0, buffer.Length);
+            context.Response.Body = stream;
+            context.Response.Body.Position = 0;
+            return ModuleResult.Continue;
+        }
     }
 }
