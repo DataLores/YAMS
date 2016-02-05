@@ -4,6 +4,7 @@ using System.Net.NetworkInformation;
 using System.Text;
 using System.Threading;
 using NetFwTypeLib;
+using NATUPNPLib;
 
 namespace YAMS
 {
@@ -156,7 +157,7 @@ namespace YAMS
         {
             if (ipAddress == "") ipAddress = GetListenIP().ToString();
             try {
-                NATUPNPLib.UPnPNATClass upnpnat = new NATUPNPLib.UPnPNATClass();
+                UPnPNAT upnpnat = new UPnPNAT();
                 upnpnat.StaticPortMappingCollection.Add(intPortNumber, "TCP", intPortNumber, ipAddress, true, "[YAMS] " + strFriendlyName);
             
                 Database.AddLog("Forwarded port " + intPortNumber + " to " + ipAddress + " for " + strFriendlyName, "networking");
@@ -179,7 +180,7 @@ namespace YAMS
         {
             try 
             {
-                NATUPNPLib.UPnPNATClass upnpnat = new NATUPNPLib.UPnPNATClass();
+                UPnPNAT upnpnat = new UPnPNAT();
                 upnpnat.StaticPortMappingCollection.Remove(intPortNumber, "TCP");
             
                 Database.AddLog("Un-forwarded port " + intPortNumber, "networking");

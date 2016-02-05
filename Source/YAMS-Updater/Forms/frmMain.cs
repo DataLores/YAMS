@@ -76,7 +76,7 @@ namespace YAMS_Updater
                 IPAddress externalIP = YAMS.Networking.GetExternalIP();
                 lblExternalIP.Text = externalIP.ToString();
                 
-                UPnPNATClass upnpnat = new UPnPNATClass();
+                UPnPNAT upnpnat = new UPnPNAT();
                 IStaticPortMappingCollection mappings = upnpnat.StaticPortMappingCollection;
 
                 progToolStrip.Maximum = mappings.Count;

@@ -5,19 +5,33 @@ using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
-using HttpServer;
-using HttpServer.Headers;
-using HttpServer.Modules;
+using Griffin.WebServer;
+using Griffin.WebServer.Files;
+using Griffin.WebServer.Modules;
 using Newtonsoft.Json.Linq;
-using HttpListener = HttpServer.HttpListener;
 
 namespace YAMS.Web
 {
-    public class PublicAPI : IModule
+    public class PublicAPI : IWorkerModule
     {
-        public ProcessingResult Process(RequestContext context)
+        public void BeginRequest(IHttpContext context)
         {
 
+        }
+
+        public void EndRequest(IHttpContext context)
+        {
+
+        }
+
+        public void HandleRequestAsync(IHttpContext context, Action<IAsyncModuleResult> callback)
+        {
+            // Since this module only supports sync
+            callback(new AsyncModuleResult(context, HandleRequest(context)));
+        }
+
+        public ModuleResult HandleRequest(IHttpContext context)
+        {
             //it's a public request, work out what they want
             // / = list servers
             // /[0-9]+/ = server home page including chat log
@@ -33,7 +47,7 @@ namespace YAMS.Web
 
             if (regServerGMap.Match(context.Request.Uri.AbsolutePath).Success || regServerRenders.Match(context.Request.Uri.AbsolutePath).Success)
             {
-                return ProcessingResult.Continue;
+                return ModuleResult.Continue;
             }
             else
             {
@@ -151,11 +165,11 @@ namespace YAMS.Web
                 else if (regServerAPI.Match(context.Request.Uri.AbsolutePath).Success)
                 {
                     string strResponse = "";
-                    IParameterCollection param = context.Request.Parameters;
+                    Griffin.Net.Protocols.Http.IParameterCollection param = context.Request.Form;
                     Match matServerAPI = regServerAPI.Match(context.Request.Uri.AbsolutePath);
                     int intServerID = Convert.ToInt32(matServerAPI.Groups[1].Value);
                     MCServer s = Core.Servers[intServerID];
-                    switch (context.Request.Parameters["action"])
+                    switch (context.Request.Form["action"])
                     {
                         case "players":
                             strResponse = "{\"players\" : [";
@@ -180,7 +194,7 @@ namespace YAMS.Web
                 else
                 {
                     //Unknown
-                    context.Response.Status = HttpStatusCode.NotFound;
+                    context.Response.StatusCode = 404;
                     strTemplate = File.ReadAllText(Core.RootFolder + @"\web\templates\server-home.html");
                     dicTags.Add("PageTitle", "404");
                     dicTags.Add("PageBody", "<h1>404 - Not Found</h1>");
@@ -190,11 +204,10 @@ namespace YAMS.Web
                 strTemplate = WebTemplate.ReplaceTags(strTemplate, dicTags);
 
                 //And send to the browser
-                context.Response.Reason = "Completed - YAMS";
-                context.Response.Connection.Type = ConnectionType.Close;
+                context.Response.ReasonPhrase = "Completed - YAMS";
                 byte[] buffer = Encoding.UTF8.GetBytes(strTemplate);
                 context.Response.Body.Write(buffer, 0, buffer.Length);
-                return ProcessingResult.SendResponse;
+                return ModuleResult.Continue;
             }
 
         }

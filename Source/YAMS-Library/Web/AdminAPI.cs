@@ -4,42 +4,66 @@ using System.Data;
 using System.Diagnostics;
 using System.IO;
 using System.Net;
+using System.Net.Sockets;
+using System.Threading.Tasks;
 using System.Text;
-using HttpServer;
-using HttpServer.Headers;
-using HttpServer.Modules;
+using Griffin.WebServer;
+using Griffin.WebServer.Files;
+using Griffin.WebServer.Modules;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
-using HttpListener = HttpServer.HttpListener;
+using System.Threading;
+
 
 namespace YAMS.Web
 {
-    public class AdminAPI : IModule
+    public class AdminAPI : IWorkerModule
     {
-        public ProcessingResult Process(RequestContext context)
+        private CustomPrincipal customPrincipal;
+
+        public void BeginRequest(IHttpContext context)
+        {
+
+        }
+
+        public void EndRequest(IHttpContext context)
+        {
+
+        }
+
+        public void HandleRequestAsync(IHttpContext context, Action<IAsyncModuleResult> callback)
+        {
+            // Since this module only supports sync
+            callback(new AsyncModuleResult(context, HandleRequest(context)));
+        }
+
+        public ModuleResult HandleRequest(IHttpContext context)
         {
             int intServerID = 0;
             MCServer s;
             string json;
             JObject jProps;
+            var ip = context.Request.RemoteEndPoint as System.Net.IPEndPoint;
 
             if (context.Request.Uri.AbsoluteUri.Contains(@"/api/"))
             {
                 //must be authenticated
 
-                //what is the action?
-                if (context.Request.Method == Method.Post && WebSession.Current.UserName == "admin")
+                if (context.Request.HttpMethod.Equals("POST", StringComparison.OrdinalIgnoreCase) 
+                    && customPrincipal.Identity.Name.Equals("admin") 
+                    && customPrincipal.Identity.IPAddress.Equals(ip.Address.ToString()))
                 {
                     String strResponse = "";
-                    IParameterCollection param = context.Request.Parameters;
-                    switch (context.Request.Parameters["action"])
+                    Griffin.Net.Protocols.Http.IParameterCollection param = context.Request.Form;
+                    //what is the action?
+                    switch (context.Request.Form["action"])
                     {
                         case "log":
                             //grabs lines from the log.
-                            int intStartID = Convert.ToInt32(context.Request.Parameters["start"]);
-                            int intNumRows = Convert.ToInt32(context.Request.Parameters["rows"]);
-                            int intServer = Convert.ToInt32(context.Request.Parameters["serverid"]);
-                            string strLevel = context.Request.Parameters["level"];
+                            int intStartID = Convert.ToInt32(context.Request.Form["start"]);
+                            int intNumRows = Convert.ToInt32(context.Request.Form["rows"]);
+                            int intServer = Convert.ToInt32(context.Request.Form["serverid"]);
+                            string strLevel = context.Request.Form["level"];
 
                             DataSet ds = Database.ReturnLogRows(intStartID, intNumRows, strLevel, intServer);
 
@@ -59,7 +83,7 @@ namespace YAMS.Web
                             break;
                         case "status":
                             //Get status of a server
-                            s = Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])];
+                            s = Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])];
                             strResponse = "{ \"serverid\" : " + s.ServerID + "," +
                                             "\"status\" : \"" + s.Running + "\"," +
                                             "\"ram\" : " + s.GetMemory() + "," +
@@ -84,12 +108,12 @@ namespace YAMS.Web
                             strResponse += "]}";
                             break;
                         case "get-players":
-                            DataSet dsPlayers = Database.GetPlayers(Convert.ToInt32(context.Request.Parameters["serverid"]));
+                            DataSet dsPlayers = Database.GetPlayers(Convert.ToInt32(context.Request.Form["serverid"]));
                             JsonConvert.SerializeObject(dsPlayers, Formatting.Indented);
                             break;
                         case "overviewer":
                             //Maps a server
-                            s = Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])];
+                            s = Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])];
                             string strRenderModes = "";
                             if (param["normal"] == "true") strRenderModes += "normal";
                             if (param["lighting"] == "true")
@@ -118,50 +142,50 @@ namespace YAMS.Web
                             break;
                         case "c10t":
                             //Images a server
-                            s = Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])];
+                            s = Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])];
                             AddOns.c10t c10t = new AddOns.c10t(s, "night=" + param["night"] + "&mode=" + param["mode"]);
                             c10t.Start();
                             strResponse = "{ \"result\" : \"sent\" }";
                             break;
                         case "tectonicus":
                             //Maps a server
-                            s = Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])];
+                            s = Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])];
                             AddOns.Tectonicus tecton = new AddOns.Tectonicus(s, "lighting=" + param["lighting"] + "&night=" + param["night"] + "&delete=" + param["delete"]);
                             tecton.Start();
                             strResponse = "{ \"result\" : \"sent\" }";
                             break;
                         case "start":
                             //Starts a server
-                            Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].Start();
+                            Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].Start();
                             strResponse = "{ \"result\" : \"sent\" }";
                             break;
                         case "stop":
                             //Stops a server
-                            Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].Stop();
+                            Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].Stop();
                             strResponse = "{ \"result\" : \"sent\" }";
                             break;
                         case "forcestop":
                             //Force stops a server
-                            Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].ForceStop();
+                            Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].ForceStop();
                             strResponse = "{ \"result\" : \"sent\" }";
                             break;
                         case "restart":
                             //Restarts a server
-                            Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].Restart();
+                            Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].Restart();
                             strResponse = "{ \"result\" : \"sent\" }";
                             break;
                         case "delayed-restart":
                             //Restarts a server after a specified time and warns players
-                            Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].DelayedRestart(Convert.ToInt32(param["delay"]));
+                            Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].DelayedRestart(Convert.ToInt32(param["delay"]));
                             strResponse = "{ \"result\" : \"sent\" }";
                             break;
                         case "restart-when-free":
-                            Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].RestartIfEmpty();
+                            Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].RestartIfEmpty();
                             strResponse = "{ \"result\" : \"sent\" }";
                             break;
                         case "command":
                             //Sends literal command to a server
-                            Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].Send(context.Request.Parameters["message"]);
+                            Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].Send(context.Request.Form["message"]);
                             strResponse = "{ \"result\" : \"sent\" }";
                             break;
                         case "get-yams-settings":
@@ -170,7 +194,7 @@ namespace YAMS.Web
                             break;
                         case "save-yams-settings":
                             //Settings update
-                            foreach (Parameter p in param)
+                            foreach (Griffin.Net.Protocols.Http.Messages.Parameter p in param)
                             {
                                 if (p.Name != "action") Database.SaveSetting(p.Name, p.Value);
                             }
@@ -193,8 +217,8 @@ namespace YAMS.Web
                                               "\"type\" : \"" + Database.GetSetting(intServerID, "ServerType") + "\"," +
                                               "\"custom\" : \"" + Database.GetSetting(intServerID, "ServerCustomJAR").ToString().Replace("\\", "\\\\").Replace("\"", "\\\"") + "\"," +
                                               "\"motd\" : \"" + Database.GetSetting("motd", "MC", intServerID) + "\"," +
-                                              "\"listen\" : \"" + Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].GetProperty("server-ip") + "\"," +
-                                              "\"port\" : \"" + Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].GetProperty("server-port") + "\"," +
+                                              "\"listen\" : \"" + Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].GetProperty("server-ip") + "\"," +
+                                              "\"port\" : \"" + Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].GetProperty("server-port") + "\"," +
                                               "\"IPs\": " + JsonConvert.SerializeObject(listIPsMC, Formatting.None);
                             strResponse += "}";
                             break;
@@ -202,8 +226,8 @@ namespace YAMS.Web
                             intServerID = Convert.ToInt32(param["serverid"]);
                             strResponse = "{ \"dnsname\" : \"" + Database.GetSetting("DNSName", "YAMS") + "\", " +
                                             "\"externalip\" : \"" + Networking.GetExternalIP().ToString() + "\", " +
-                                            "\"internalip\" : \"" + Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].GetProperty("server-ip") + "\", " +
-                                            "\"mcport\" : " + Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].GetProperty("server-port") + ", " +
+                                            "\"internalip\" : \"" + Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].GetProperty("server-ip") + "\", " +
+                                            "\"mcport\" : " + Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].GetProperty("server-port") + ", " +
                                             "\"publicport\" : " + Database.GetSetting("PublicListenPort", "YAMS") + ", " +
                                             "\"message\" : " + JsonConvert.SerializeObject(Database.GetSetting(intServerID, "ServerWebBody"), Formatting.None) + "}";
                             break;
@@ -223,7 +247,7 @@ namespace YAMS.Web
                             foreach(JObject option in jProps["options"]) {
                                 strResponse += "<p><label for=\"" + (string)option["key"] + "\" title=\"" + (string)option["description"] + "\">" + (string)option["name"] + "</label>";
 
-                                string strValue = Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].GetProperty((string)option["key"]);
+                                string strValue = Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].GetProperty((string)option["key"]);
 
                                 switch ((string)option["type"])
                                 {
@@ -283,7 +307,7 @@ namespace YAMS.Web
                             Database.SaveSetting(intServerID, "motd", param["message"]);
 
                             //Save the server's MC settings
-                            MCServer thisServer = Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])];
+                            MCServer thisServer = Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])];
                             thisServer.SaveProperty("server-ip", param["cfg_listen-ip"]);
                             thisServer.SaveProperty("server-port", param["cfg_port"]);
 
@@ -325,11 +349,11 @@ namespace YAMS.Web
 
                             break;
                         case "get-config-file":
-                            List<string> listConfig = Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].ReadConfig(param["file"]);
+                            List<string> listConfig = Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].ReadConfig(param["file"]);
                             strResponse = JsonConvert.SerializeObject(listConfig, Formatting.Indented);
                             break;
                         case "get-server-whitelist":
-                            strResponse = "{ \"enabled\" : " + Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].GetProperty("white-list") + " }";
+                            strResponse = "{ \"enabled\" : " + Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].GetProperty("white-list") + " }";
                             break;
                         case "upload-world":
                             var test = context.Request.Files["new-world"];
@@ -337,13 +361,13 @@ namespace YAMS.Web
                         case "delete-world":
                             bool bolRandomSeed = false;
                             if (param["randomseed"] == "true") bolRandomSeed = true;
-                            Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].ClearWorld(bolRandomSeed);
+                            Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].ClearWorld(bolRandomSeed);
                             strResponse = "{ \"result\" : \"sent\" }";
                             break;
                         case "remove-server":
-                            Core.Servers[Convert.ToInt32(context.Request.Parameters["serverid"])].Stop();
-                            Core.Servers.Remove(Convert.ToInt32(context.Request.Parameters["serverid"]));
-                            Database.DeleteServer(Convert.ToInt32(context.Request.Parameters["serverid"]));
+                            Core.Servers[Convert.ToInt32(context.Request.Form["serverid"])].Stop();
+                            Core.Servers.Remove(Convert.ToInt32(context.Request.Form["serverid"]));
+                            Database.DeleteServer(Convert.ToInt32(context.Request.Form["serverid"]));
                             strResponse = "{ \"result\" : \"removed\" }";
                             break;
                         case "about":
@@ -413,7 +437,7 @@ namespace YAMS.Web
                             catch (Exception e)
                             {
                                 YAMS.Database.AddLog("Invalid input on network settings", "web", "warn");
-                                return ProcessingResult.Abort;
+                                return ModuleResult.Stop;
                             }
 
                             Database.SaveSetting("EnablePortForwarding", param["portForwarding"]);
@@ -443,7 +467,7 @@ namespace YAMS.Web
                             Database.AddJob(param["job-type"], intHour, intMinute, param["job-params"], intServerID);
                             break;
                         case "logout":
-                            WebSession.Current.UserName = "";
+                            customPrincipal.Identity = new AnonymousIdentity();
                             break;
                         case "newserver":
                             var NewServer = new List<KeyValuePair<string, string>>();
@@ -468,40 +492,41 @@ namespace YAMS.Web
                             strResponse = "{ \"result\" : \"sent\" }";
                             break;
                         default:
-                            return ProcessingResult.Abort;
+                            return ModuleResult.Stop;
                     }
 
-                    context.Response.Reason = "Completed - YAMS";
-                    context.Response.Connection.Type = ConnectionType.Close;
-                    byte[] buffer = Encoding.UTF8.GetBytes(strResponse);
-                    context.Response.Body.Write(buffer, 0, buffer.Length);
+                    return writeContent(context, "Completed - YAMS (API)", "text/javascript", strResponse);
                 }
                 else
                 {
                     // not a post, so say bye bye!
-                    return ProcessingResult.Abort;
+                    return ModuleResult.Stop;
                 }
 
-                return ProcessingResult.SendResponse;
             }
             else if (context.Request.Uri.AbsoluteUri.Contains(@"/admin"))
             {
-
-                if (WebSession.Current.UserName != "admin")
+                try
                 {
-                    context.Response.Reason = "Completed - YAMS";
-                    context.Response.Connection.Type = ConnectionType.Close;
-                    byte[] buffer = Encoding.UTF8.GetBytes(File.ReadAllText(YAMS.Core.RootFolder + @"\web\admin\login.html"));
-                    context.Response.Body.Write(buffer, 0, buffer.Length);
-                    return ProcessingResult.SendResponse;
+                    if (customPrincipal == null)
+                    {
+                        Thread.CurrentPrincipal = new CustomPrincipal();
+                        customPrincipal = Thread.CurrentPrincipal as CustomPrincipal;
+                        customPrincipal.Identity = new AnonymousIdentity();
+                    } 
+                }
+                catch (Exception e)
+                {
+                    return writeContent(context, "Completed - YAMS", "text/html", e.ToString());
+                }
+
+                if (!customPrincipal.Identity.Name.Equals("admin") || !customPrincipal.Identity.IPAddress.Equals(ip.Address.ToString()))
+                {
+                    return writeContent(context, "Completed - YAMS", "text/html", File.ReadAllText(YAMS.Core.RootFolder + @"\web\admin\login.html"));
                 }
                 else
                 {
-                    context.Response.Reason = "Completed - YAMS";
-                    context.Response.Connection.Type = ConnectionType.Close;
-                    byte[] buffer = Encoding.UTF8.GetBytes(File.ReadAllText(YAMS.Core.RootFolder + @"\web\admin\index.html"));
-                    context.Response.Body.Write(buffer, 0, buffer.Length);
-                    return ProcessingResult.SendResponse;
+                    return writeContent(context, "Completed - YAMS", "text/html", File.ReadAllText(YAMS.Core.RootFolder + @"\web\admin\index.html"));
                 }
             }
             else if (context.Request.Uri.AbsoluteUri.Contains(@"/login"))
@@ -512,30 +537,106 @@ namespace YAMS.Web
 
                 if (userName == "admin" && password == Database.GetSetting("AdminPassword", "YAMS"))
                 {
-                    WebSession.Create();
-                    WebSession.Current.UserName = "admin";
-                    context.Response.Redirect(@"/admin");
-                    return ProcessingResult.SendResponse;
+                    try
+                    {
+                        var ip_store = context.Request.RemoteEndPoint as System.Net.IPEndPoint;
+                        Thread.CurrentPrincipal = new CustomPrincipal();
+                        customPrincipal = Thread.CurrentPrincipal as CustomPrincipal;
+                        customPrincipal.Identity = new CustomIdentity("admin", ip_store.Address.ToString());
+                        return writeContent(context, "Completed - YAMS", "text/html", File.ReadAllText(YAMS.Core.RootFolder + @"\web\admin\index.html"));
+                    }
+                    catch (Exception e)
+                    {
+                        return writeContent(context, "Completed - YAMS", "text/html", e.ToString());
+                    }
                 }
                 else
                 {
-                    context.Response.Reason = "Completed - YAMS";
-                    context.Response.Connection.Type = ConnectionType.Close;
-                    byte[] buffer = Encoding.UTF8.GetBytes(File.ReadAllText(YAMS.Core.RootFolder + @"\web\admin\login.html"));
-                    context.Response.Body.Write(buffer, 0, buffer.Length);
-                    return ProcessingResult.SendResponse;
+                    return writeContent(context, "Completed - YAMS", "text/html", File.ReadAllText(YAMS.Core.RootFolder + @"\web\admin\login.html"));
                 }
             }
-            else if (context.Request.Uri.AbsoluteUri.Equals(@"/")) {
-                    context.Response.Redirect(@"/admin");
-                    return ProcessingResult.SendResponse;
+            else if (context.Request.Uri.AbsoluteUri.Contains(@"/")) {
+                return writeContent(context, "Completed - YAMS", "text/html", File.ReadAllText(YAMS.Core.RootFolder + @"\web\admin\login.html"));
             }
             else
             {
-                return ProcessingResult.Abort;
+                return writeContent(context, "Completed - YAMS", "text/html", context.Request.Uri.AbsoluteUri); //not a mapped URI, but we will show the server is at least alive
             }
 
         }
 
+        /// <summary>
+        /// For a valid HTTP 200 result, take the reason, type of data, and actual data and render to user.
+        /// </summary>
+        /// <param name="context">Current HTTP Context of Webserver</param>
+        /// <param name="reason">Reason Phrase</param>
+        /// <param name="type">HTML data type, i.e. text/html or text/javascript</param>
+        /// <param name="data">The data to send back</param>
+        /// <returns>A ModuleResult.Continue</returns>
+        public ModuleResult writeContent(IHttpContext context, String reason, String type, String data)
+        {
+            context.Response.ReasonPhrase = reason;
+            byte[] buffer = Encoding.UTF8.GetBytes(data);
+            context.Response.ContentType = type;
+            context.Response.StatusCode = 200;
+            MemoryStream stream = new MemoryStream();
+            stream.Write(buffer, 0, buffer.Length);
+            context.Response.Body = stream;
+            context.Response.Body.Position = 0;
+            return ModuleResult.Continue;
+        }
+
+    }
+
+    /// <summary>
+    /// Use a custom Identity Class to Handle Authentication in New Framework / .NET 4.5 Standards
+    /// </summary>
+    public class CustomIdentity : System.Security.Principal.IIdentity
+    {
+        public CustomIdentity(string name, string ipaddr)
+        {
+            Name = name;
+            IPAddress = ipaddr;
+        }
+
+        public string Name { get; private set; }
+
+        public string IPAddress { get; private set; }
+
+        #region IIdentity Members
+        public string AuthenticationType { get { return "Custom authentication"; } }
+
+        public bool IsAuthenticated { get { return !Name.Equals("anonymous"); } }
+        #endregion
+    }
+
+    public class AnonymousIdentity : CustomIdentity
+    {
+        public AnonymousIdentity()
+            : base("anonymous", "0.0.0.0")
+        { }
+    }
+
+    public class CustomPrincipal : System.Security.Principal.IPrincipal
+    {
+        private CustomIdentity _identity;
+
+        public CustomIdentity Identity
+        {
+            get { return _identity ?? new AnonymousIdentity(); }
+            set { _identity = value; }
+        }
+
+        #region IPrincipal Members
+        System.Security.Principal.IIdentity System.Security.Principal.IPrincipal.Identity
+        {
+            get { return this.Identity; }
+        }
+        #endregion
+
+        public bool IsInRole(string role)
+        {
+            return false;
+        }
     }
 }

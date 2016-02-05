@@ -1,6 +1,8 @@
 ﻿
-Microsoft Visual Studio Solution File, Format Version 11.00
-# Visual Studio 2010
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 2013
+VisualStudioVersion = 12.0.31101.0
+MinimumVisualStudioVersion = 10.0.40219.1
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "YAMS-Library", "YAMS-Library\YAMS-Library.csproj", "{23221E7A-861F-4840-A107-823AD37F0839}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "YAMS-Tester", "YAMS-Tester\YAMS-Tester.csproj", "{CAC55860-0920-4506-AD96-95D0F67362C3}"
@@ -32,6 +34,7 @@ Project("{E24C65DC-7377-472B-9ABA-BC803B73C61A}") = "YAMS-Web", "YAMS-Web\", "{3
 		Release.AspNetCompiler.FixedNames = "false"
 		Release.AspNetCompiler.Debug = "False"
 		VWDPort = "55068"
+		SlnRelativePath = "YAMS-Web\"
 		StartServerOnDebug = "false"
 	EndProjectSection
 EndProject
@@ -54,8 +57,8 @@ Global
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
 		{23221E7A-861F-4840-A107-823AD37F0839}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{23221E7A-861F-4840-A107-823AD37F0839}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{23221E7A-861F-4840-A107-823AD37F0839}.Debug|Mixed Platforms.ActiveCfg = Debug|Any CPU
-		{23221E7A-861F-4840-A107-823AD37F0839}.Debug|Mixed Platforms.Build.0 = Debug|Any CPU
+		{23221E7A-861F-4840-A107-823AD37F0839}.Debug|Mixed Platforms.ActiveCfg = Debug|x86
+		{23221E7A-861F-4840-A107-823AD37F0839}.Debug|Mixed Platforms.Build.0 = Debug|x86
 		{23221E7A-861F-4840-A107-823AD37F0839}.Debug|x86.ActiveCfg = Debug|Any CPU
 		{23221E7A-861F-4840-A107-823AD37F0839}.Debug|x86.Build.0 = Debug|Any CPU
 		{23221E7A-861F-4840-A107-823AD37F0839}.Release 2.0|Any CPU.ActiveCfg = Release|Any CPU
@@ -174,8 +177,8 @@ Global
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
-		BuildVersion_BuildVersioningStyle = None.None.None.None
-		BuildVersion_UpdateFileVersion = False
 		BuildVersion_UpdateAssemblyVersion = False
+		BuildVersion_UpdateFileVersion = False
+		BuildVersion_BuildVersioningStyle = None.None.None.None
 	EndGlobalSection
 EndGlobal

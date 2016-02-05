@@ -6,19 +6,18 @@ using System.IO;
 using System.Net;
 using System.Text;
 using System.Threading;
-using HttpServer;
-using HttpServer.Headers;
-using HttpServer.Modules;
-using HttpServer.Resources;
-using HttpServer.Tools;
-using HttpListener = HttpServer.HttpListener;
+using System.Net.Sockets;
+using System.Threading.Tasks;
+using Griffin.WebServer;
+using Griffin.WebServer.Files;
+using Griffin.WebServer.Modules;
 
 namespace YAMS
 {
     public static class WebServer
     {
-        private static Server adminServer;
-        private static Server publicServer;
+        private static ModuleManager adminModuleManager;
+        private static ModuleManager publicModuleManager;
 
         private static Thread adminServerThread;
         private static Thread publicServerThread;
@@ -37,18 +36,17 @@ namespace YAMS
                 AutoUpdate.ExtractZip(YAMS.Core.RootFolder + @"\web.zip", YAMS.Core.RootFolder + @"\web\");
                 File.Delete(Core.RootFolder + @"\web.zip");
             }
-            
-            adminServer = new Server();
+
+            //create module manager to add all modules to admin webserver
+            adminModuleManager = new ModuleManager();
 
             //Handle the requests for static files
-            var adminModule = new FileModule();
-            adminModule.Resources.Add(new FileResources("/assets/", YAMS.Core.RootFolder + "\\web\\assets\\"));
-            adminServer.Add(adminModule);
+            var fileService = new DiskFileService("/assets/", YAMS.Core.RootFolder + "\\web\\assets\\");
+            var assets = new FileModule(fileService) { AllowFileListing = false };
+            adminModuleManager.Add(assets);
+            
             //Handle requests to API
-            adminServer.Add(new Web.AdminAPI());
-
-            adminServer.Add(HttpListener.Create(IPAddress.Any, Convert.ToInt32(YAMS.Database.GetSetting("AdminListenPort", "YAMS"))));
-            adminServer.ErrorPageRequested += new EventHandler<ErrorPageEventArgs>(myServer_ErrorPageRequested);
+            adminModuleManager.Add(new Web.AdminAPI());
             adminServerThread = new Thread(new ThreadStart(StartAdmin));
             adminServerThread.Start();
 
@@ -66,24 +64,23 @@ namespace YAMS
             if (Database.GetSetting("EnablePublicSite", "YAMS") == "true")
             {
                 //Add any server specific folders
-                publicServer = new Server();
-                var publicModule = new FileModule();
-                publicModule.Resources.Add(new FileResources("/assets/", YAMS.Core.RootFolder + "\\web\\assets\\"));
+                publicModuleManager = new ModuleManager();
+                publicModuleManager.Add(assets);
+
                 SqlCeDataReader readerServers = YAMS.Database.GetServers();
                 while (readerServers.Read())
                 {
                     var intServerID = readerServers["ServerID"].ToString();
                     if (!Directory.Exists(Core.StoragePath + intServerID + "\\renders\\")) Directory.CreateDirectory(Core.StoragePath + intServerID + "\\renders\\");
-                    publicModule.Resources.Add(new FileResources("/servers/" + intServerID + "/renders/", Core.StoragePath + intServerID + "\\renders\\"));
+                    publicModuleManager.Add(new FileModule(new DiskFileService("/servers/" + intServerID + "/renders/", Core.StoragePath + intServerID + "\\renders\\")));
                     if (!Directory.Exists(Core.StoragePath + intServerID + "\\backups\\")) Directory.CreateDirectory(Core.StoragePath + intServerID + "\\backups\\");
-                    publicModule.Resources.Add(new FileResources("/servers/" + intServerID + "/backups/", Core.StoragePath + intServerID + "\\backups\\"));
+                    publicModuleManager.Add(new FileModule(new DiskFileService("/servers/" + intServerID + "/backups/", Core.StoragePath + intServerID + "\\backups\\")));
                 }
-                publicServer.Add(publicModule);
 
                 //Handle requests to API
-                publicServer.Add(new Web.PublicAPI());
-                publicServer.Add(HttpListener.Create(IPAddress.Any, Convert.ToInt32(YAMS.Database.GetSetting("PublicListenPort", "YAMS"))));
-                publicServer.ErrorPageRequested += new EventHandler<ErrorPageEventArgs>(myServer_ErrorPageRequested);
+                publicModuleManager.Add(new Web.PublicAPI());
+                //publicServer.Add(HttpListener.Create(IPAddress.Any, Convert.ToInt32(YAMS.Database.GetSetting("PublicListenPort", "YAMS"))));
+
                 publicServerThread = new Thread(new ThreadStart(StartPublic));
                 publicServerThread.Start();
 
@@ -100,15 +97,6 @@ namespace YAMS
             }
         }
 
-        static void myServer_ErrorPageRequested(object sender, ErrorPageEventArgs e)
-        {
-            Database.AddLog(e.Exception.Message, "web", "error");
-            e.Response.Reason = "Error - YAMS";
-            e.Response.Connection.Type = ConnectionType.Close;
-            byte[] buffer = Encoding.UTF8.GetBytes("<h1>500 Internal Server Error</h1><p>" + e.Exception.Message + "</p><p>" + e.Exception.Source + "</p><p>" + e.Exception.StackTrace + "</p><p>" + e.Exception.InnerException.StackTrace + "</p>");
-            e.Response.Body.Write(buffer, 0, buffer.Length);
-        }
-
         public static void StartAdmin()
         {
             try
@@ -119,9 +107,9 @@ namespace YAMS
                     Thread.Sleep(5000);
                 }
 
-                adminServer.Start(5);
-                //Start our session provider
-                WebSession.Start(adminServer);
+                //start new webserver for admin, session handling built-in
+                var server = new Griffin.WebServer.HttpServer(adminModuleManager);
+                server.Start(IPAddress.Any, Convert.ToInt32(YAMS.Database.GetSetting("AdminListenPort", "YAMS")));
             }
             catch (System.Net.Sockets.SocketException e)
             {
@@ -146,7 +134,8 @@ namespace YAMS
                     Database.AddLog("Public Web server port still in use, attempt " + PublicTryCount, "web", "warn");
                     Thread.Sleep(5000);
                 }
-                publicServer.Start(5);
+                var server = new Griffin.WebServer.HttpServer(publicModuleManager);
+                server.Start(IPAddress.Any, Convert.ToInt32(YAMS.Database.GetSetting("PublicListenPort", "YAMS")));
             }
             catch (System.Net.Sockets.SocketException e)
             {
@@ -159,10 +148,7 @@ namespace YAMS
                 myLog.Source = "YAMS";
                 myLog.WriteEntry("Exception: " + e.Data, EventLogEntryType.Error);
             }
-
-       
         }
-
 
         public static void Stop()
         {
@@ -183,63 +169,5 @@ namespace YAMS
         }
 
     }
-
-    [Serializable]
-    public class WebSession : Session
-    {
-        private static readonly SessionProvider<WebSession> _sessionProvider = new SessionProvider<WebSession>();
-
-        static WebSession()
-        {
-            _sessionProvider.Cache = true;
-        }
-
-        /// <summary>
-        /// Gets currently loaded session
-        /// </summary>
-        /// <remarks>
-        /// Will not create sessions and manage new sessions, but returns a dummy one which is not handled by the provider class.
-        /// Use the Create method to get a session that will be maintained by the provider class.
-        /// </remarks>
-        public static WebSession Current
-        {
-            get { return _sessionProvider.Current ?? new WebSession(); }
-        }
-
-        /// <summary>
-        /// Gets or sets first name.
-        /// </summary>
-        public string FirstName { get; set; }
-
-        /// <summary>
-        /// Gets or sets user id.
-        /// </summary>
-        public int UserId { get; set; }
-
-        /// <summary>
-        /// Gets or sets user name.
-        /// </summary>
-        public string UserName { get; set; }
-
-        /// <summary>
-        /// Gets or sets current errors.
-        /// </summary>
-        public static List<string> Errors { get; set; }
-
-        /// <summary>
-        /// Creates a new session and also sets it as the current one.
-        /// </summary>
-        /// <returns>Created session.</returns>
-        public static WebSession Create()
-        {
-            return _sessionProvider.Create();
-        }
-
-        internal static void Start(Server webServer)
-        {
-            _sessionProvider.Start(webServer);
-        }
-    }
-
 
 }
